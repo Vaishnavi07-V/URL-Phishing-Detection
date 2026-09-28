@@ -2,7 +2,7 @@ import os
 import joblib
 import pandas as pd
 
-from feature_extraction import extract_url_features
+from .feature_extraction import extract_url_features
 
 
 # Get the folder where predict.py is located
