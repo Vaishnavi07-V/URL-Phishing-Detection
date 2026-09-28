@@ -1,7 +1,14 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, field_validator
+
 from ml.predict import predict_url
+
+from database.database import (
+    initialize_database,
+    insert_prediction,
+    get_prediction_history
+)
 
 
 # Create FastAPI application
@@ -22,6 +29,12 @@ app.add_middleware(
 )
 
 
+# Initialize database when application starts
+@app.on_event("startup")
+def startup_event():
+    initialize_database()
+
+
 # Request model
 class URLRequest(BaseModel):
     url: str
@@ -40,6 +53,7 @@ class URLRequest(BaseModel):
 
         return value
 
+
 # Home endpoint
 @app.get("/")
 def home():
@@ -53,17 +67,52 @@ def home():
 def predict(request: URLRequest):
 
     try:
+        # Get prediction from existing ML model
         result = predict_url(str(request.url))
+
+        prediction = result["prediction"]
+        prediction_result = result["result"]
+        confidence = result["confidence"]
+
+        # Store prediction in SQLite database
+        database_saved = insert_prediction(
+            str(request.url),
+            prediction,
+            prediction_result,
+            confidence
+        )
+
+        # Database failure should not prevent a successful ML response
+        if not database_saved:
+            print("Warning: Prediction was successful, but database storage failed.")
 
         return {
             "url": str(request.url),
-            "prediction": result["prediction"],
-            "result": result["result"],
-            "confidence": result["confidence"]
+            "prediction": prediction,
+            "result": prediction_result,
+            "confidence": confidence
         }
 
     except Exception as e:
         raise HTTPException(
             status_code=500,
             detail=f"Prediction failed: {str(e)}"
+        )
+
+
+# Prediction history endpoint
+@app.get("/history")
+def history():
+
+    try:
+        prediction_history = get_prediction_history()
+
+        return {
+            "history": prediction_history
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Could not retrieve prediction history: {str(e)}"
         )
